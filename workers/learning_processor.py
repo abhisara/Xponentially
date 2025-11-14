@@ -11,7 +11,8 @@ from langgraph.types import Command
 from helpers.state import State
 from helpers.observability import ExecutionTracker, create_enhanced_message_metadata
 from helpers.context_loader import load_context_for_task, format_context_for_prompt
-from prompts.templates import get_processor_prompt
+from helpers.learning_file_manager import create_or_update_learning_task_file
+from prompts.templates import get_processor_prompt, get_next_step_prompt
 
 
 def learning_processor_node(state: State) -> Command[Literal["executor"]]:
@@ -92,20 +93,56 @@ def learning_processor_node(state: State) -> Command[Literal["executor"]]:
         # Import model factory
         from config.model_factory import get_tracked_chat_model
 
+        # Get project name and comments
+        project_id_to_name = state.get("project_id_to_name", {})
+        project_name = project_id_to_name.get(task.get('project_id'), "Unknown Project")
+        comments = task.get('comments', [])
+
         # Generate learning-specific processing prompt
         prompt = get_processor_prompt(
             processor_type="learning",
             task=task,
-            context=context_info if context_info else None
+            context=context_info if context_info else None,
+            comments=comments,
+            project_name=project_name
         )
 
-        # Get learning plan from LLM with tracking
+        # Get learning plan from LLM with tracking (FIRST LLM CALL)
         model = get_tracked_chat_model(
             node_name="learning_processor",
-            purpose="learning_task_processing"
+            purpose="learning_path_generation"
         )
         response = model.invoke(prompt)
         learning_output = response.content if hasattr(response, 'content') else str(response)
+
+        # Generate next immediate step (SECOND LLM CALL)
+        next_step_prompt = get_next_step_prompt(
+            task=task,
+            learning_plan=learning_output,
+            comments=comments,
+            context=context_info if context_info else None
+        )
+
+        next_step_model = get_tracked_chat_model(
+            node_name="learning_processor",
+            purpose="next_step_generation"
+        )
+        next_step_response = next_step_model.invoke(next_step_prompt)
+        next_step = next_step_response.content if hasattr(next_step_response, 'content') else str(next_step_response)
+
+        # Create or update learning task markdown file
+        try:
+            filepath, is_new = create_or_update_learning_task_file(
+                task=task,
+                project_name=project_name,
+                comments=comments,
+                learning_plan=learning_output,
+                next_step=next_step
+            )
+            file_action = "Created" if is_new else "Updated"
+        except Exception as e:
+            filepath = None
+            file_action = f"Error creating file: {str(e)}"
 
         # Finish tracking
         exec_event.finish()
@@ -122,21 +159,33 @@ def learning_processor_node(state: State) -> Command[Literal["executor"]]:
             task_type=task_classification
         )
 
-        # Add context info to result message if context was used
-        context_note = ""
+        # Build result message with context and file info
+        import os
+        notes = []
+
         if context_path:
-            import os
             context_filename = os.path.basename(context_path)
-            context_note = f"\n\n*(Used context from {context_filename})*"
+            notes.append(f"Used context from {context_filename}")
+
+        if filepath:
+            filename = os.path.basename(filepath)
+            notes.append(f"{file_action} learning task file: {filename}")
+
+        notes_text = "\n\n*" + " | ".join(notes) + "*" if notes else ""
 
         result_message = HumanMessage(
-            content=f"Learning plan for '{task['content']}':\n{learning_output}{context_note}",
+            content=f"Learning plan for '{task['content']}':\n\nNext Step: {next_step}{notes_text}",
             name="learning_processor"
         )
 
         # Update processed results
         processed_results = state.get("processed_results", {})
         processed_results[task_id] = learning_output
+
+        # Track learning task files
+        learning_task_files = state.get("learning_task_files", {})
+        if filepath:
+            learning_task_files[task_id] = filepath
 
         # Note: In task-loop mode, the executor handles incrementing current_task_index
         # Only increment in legacy mode (when current_task_id is not set)
@@ -145,6 +194,7 @@ def learning_processor_node(state: State) -> Command[Literal["executor"]]:
             "processed_results": processed_results,
             "execution_timeline": execution_timeline,
             "task_context_files": task_context_files,  # Track context usage
+            "learning_task_files": learning_task_files,  # Track learning task files
         }
 
         if not current_task_id:

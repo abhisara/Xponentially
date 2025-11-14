@@ -10,6 +10,7 @@ from langgraph.types import Command
 
 from config.config import TODOIST_API_TOKEN
 from helpers.state import State
+from helpers.todoist_helpers import get_task_comments
 
 
 def todoist_fetcher_node(state: State) -> Command[Literal["executor"]]:
@@ -45,6 +46,12 @@ def todoist_fetcher_node(state: State) -> Command[Literal["executor"]]:
 
                 # Include tasks due today or overdue
                 if task_date <= today:
+                    # Fetch comments for this task
+                    try:
+                        comments = get_task_comments(task.id)
+                    except Exception:
+                        comments = []  # Fallback to empty list if comment fetch fails
+
                     today_tasks.append({
                         "id": task.id,
                         "content": task.content,
@@ -53,6 +60,8 @@ def todoist_fetcher_node(state: State) -> Command[Literal["executor"]]:
                         "priority": task.priority,
                         "due_date": task.due.date,
                         "project_id": task.project_id,
+                        "created_at": task.created_at,
+                        "comments": comments,
                     })
 
         # Apply task limit if specified

@@ -64,3 +64,6 @@ output/
 
 # Context files (user-specific, not shared)
 contexts/
+
+# Learning task files (user-specific progress tracking)
+learning_tasks/

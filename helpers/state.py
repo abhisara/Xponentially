@@ -46,3 +46,4 @@ class State(MessagesState):
 
     # Context file tracking
     task_context_files: Optional[Dict[str, str]]  # task_id -> context_file_path mapping
+    learning_task_files: Optional[Dict[str, str]]  # task_id -> learning_task_file_path mapping
