@@ -1,6 +1,31 @@
-# Task Context Files
+# Task Context File Templates
 
-This directory contains persistent context files that provide continuity across task executions.
+This directory contains **example/template** context files. These are NOT used by the system directly.
+
+## Setup Instructions
+
+To use context files in your workflow:
+
+1. **Create the contexts/ directory** (if it doesn't exist):
+   ```bash
+   mkdir contexts
+   ```
+
+2. **Copy templates you want to use**:
+   ```bash
+   cp contexts_examples/meal_planning.md contexts/
+   cp contexts_examples/learning.md contexts/
+   ```
+
+3. **Customize the files** with your personal information
+
+4. **Your contexts/ folder is private** - it's in `.gitignore` and won't be committed to git
+
+---
+
+# About Context Files
+
+Context files provide continuity across task executions.
 
 ## How Context Files Work
 

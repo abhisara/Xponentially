@@ -59,7 +59,8 @@ logs/
 temp/
 tmp/
 
-# Output files (optional - uncomment if you don't want to track generated reports)
-# *.md
-# !README.md
-# !CLAUDE.md
+# Output files
+output/
+
+# Context files (user-specific, not shared)
+contexts/
