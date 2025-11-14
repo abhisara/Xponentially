@@ -178,8 +178,9 @@ AVAILABLE WORKERS:
 {agent_guidelines}
 
 VALID WORKER NAMES:
-- research_processor (for research, learning, abstract tasks)
-- next_action_processor (for short, planning tasks)
+- research_processor (for research and abstract tasks)
+- learning_processor (for learning and educational tasks)
+- next_action_processor (for short and planning tasks)
 - task_complete (signals this task is fully processed, move to next task)
 
 TASKS REMAINING: {tasks_remaining} (including current)
@@ -201,7 +202,8 @@ ROUTING DECISION INSTRUCTIONS:
      * What still needs to be done
    - DO NOT send to a worker it's already visited unless absolutely necessary
    - Match task type to worker:
-     * research/learning/abstract → research_processor
+     * research/abstract → research_processor
+     * learning → learning_processor
      * short/planning → next_action_processor
 
 OUTPUT FORMAT:
