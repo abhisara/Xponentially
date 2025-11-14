@@ -296,6 +296,52 @@ def get_processor_prompt(task_type: str, task: dict, context: str = None, commen
     # Format project info
     project_info = f"Project: {project_name}\n" if project_name else ""
 
+    # Build learning prompt with conditional sections
+    learning_prompt = f"""You are a learning curriculum builder. Create a comprehensive learning path for this educational task.
+
+TASK:
+{project_info}Content: {task['content']}
+Description: {task.get('description', 'None')}
+Labels: {', '.join(task.get('labels', []))}
+{comments_section}
+{context if context else ""}
+
+OUTPUT:
+Generate a detailed, well-structured learning plan in markdown format with these sections:
+
+### 1. Learning Objective
+What you'll master by completing this task.
+
+### 2. Prerequisites
+Knowledge or skills needed before starting (if any).
+
+### 3. Learning Path
+Step-by-step curriculum to achieve the objective. Be specific about what to learn in each step.
+
+### 4. Resources
+Suggested materials (documentation, tutorials, examples, courses).
+
+### 5. Practice Activities
+Hands-on exercises or projects to reinforce learning.
+"""
+
+    if context:
+        learning_prompt += """
+### 6. Connection to Previous Learning
+How this builds on past work or relates to your learning context.
+"""
+
+    if comments_section:
+        learning_prompt += """
+### 7. Insights from Comments
+Key points, resources, or guidance from task comments.
+"""
+
+    learning_prompt += """
+Return your learning plan as well-structured markdown. Be comprehensive but concise.
+Do NOT include a "Next Steps" section - that will be generated separately.
+"""
+
     prompts = {
         "research": f"""You are a research task processor. Analyze this research task and create a research plan.
 
@@ -348,40 +394,7 @@ Generate a structured plan with:
 Return your plan as structured text.
 """,
 
-        "learning": f"""You are a learning curriculum builder. Create a comprehensive learning path for this educational task.
-
-TASK:
-{project_info}Content: {task['content']}
-Description: {task.get('description', 'None')}
-Labels: {', '.join(task.get('labels', []))}
-{comments_section}
-{context if context else ""}
-
-OUTPUT:
-Generate a detailed, well-structured learning plan in markdown format with these sections:
-
-### 1. Learning Objective
-What you'll master by completing this task.
-
-### 2. Prerequisites
-Knowledge or skills needed before starting (if any).
-
-### 3. Learning Path
-Step-by-step curriculum to achieve the objective. Be specific about what to learn in each step.
-
-### 4. Resources
-Suggested materials (documentation, tutorials, examples, courses).
-
-### 5. Practice Activities
-Hands-on exercises or projects to reinforce learning.
-
-{('### 6. Connection to Previous Learning\nHow this builds on past work or relates to your learning context.\n' if context else '')}
-
-{('### 7. Insights from Comments\nKey points, resources, or guidance from task comments.\n' if comments_section else '')}
-
-Return your learning plan as well-structured markdown. Be comprehensive but concise.
-Do NOT include a "Next Steps" section - that will be generated separately.
-""",
+        "learning": learning_prompt,
 
         "abstract": f"""You are an abstract model builder. Generate insights for this conceptual task.
 
