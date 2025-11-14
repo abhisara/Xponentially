@@ -82,11 +82,13 @@ if st.session_state.processing and st.session_state.workflow_result is None:
                     "task_classifier",
                     "research_processor",
                     "next_action_processor",
+                    "learning_processor",
                     "markdown_writer"
                 ],
                 "execution_timeline": [],
                 "llm_call_log": [],
-                "executor_decisions": []
+                "executor_decisions": [],
+                "task_context_files": {}
             }
 
             # Create status containers

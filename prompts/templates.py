@@ -268,13 +268,14 @@ Analyze each task carefully and assign the most appropriate type. Return ONLY th
 """
 
 
-def get_processor_prompt(task_type: str, task: dict) -> str:
+def get_processor_prompt(task_type: str, task: dict, context: str = None) -> str:
     """
     Creates prompt for specialized task processors.
 
     Args:
         task_type: Type of task (research/planning/short/learning/abstract)
         task: Task object with content and metadata
+        context: Optional context information from context files
 
     Returns:
         Formatted processor prompt
@@ -286,6 +287,8 @@ TASK:
 Content: {task['content']}
 Description: {task.get('description', 'None')}
 Labels: {', '.join(task.get('labels', []))}
+
+{context if context else ""}
 
 OUTPUT:
 Generate a research plan that includes:
@@ -303,6 +306,8 @@ Content: {task['content']}
 Description: {task.get('description', 'None')}
 Labels: {', '.join(task.get('labels', []))}
 
+{context if context else ""}
+
 OUTPUT:
 Return a single sentence describing the concrete next action to take.
 Make it specific, actionable, and achievable in one sitting.
@@ -314,6 +319,8 @@ TASK:
 Content: {task['content']}
 Description: {task.get('description', 'None')}
 Labels: {', '.join(task.get('labels', []))}
+
+{context if context else ""}
 
 OUTPUT:
 Generate a structured plan with:
@@ -332,12 +339,15 @@ Content: {task['content']}
 Description: {task.get('description', 'None')}
 Labels: {', '.join(task.get('labels', []))}
 
+{context if context else ""}
+
 OUTPUT:
 Generate a learning plan with:
 1. Current topic focus
 2. Prerequisites to cover
 3. Next learning steps
 4. Practice/application ideas
+{('5. How this builds on previous learning context' if context else '')}
 
 Return your curriculum as structured text.
 """,
@@ -348,6 +358,8 @@ TASK:
 Content: {task['content']}
 Description: {task.get('description', 'None')}
 Labels: {', '.join(task.get('labels', []))}
+
+{context if context else ""}
 
 OUTPUT:
 Generate:

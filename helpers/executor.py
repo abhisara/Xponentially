@@ -25,6 +25,7 @@ def executor_node(state: State) -> Command[Union[
     Literal["task_classifier"],
     Literal["research_processor"],
     Literal["next_action_processor"],
+    Literal["learning_processor"],
     Literal["markdown_writer"],
     Literal["planner"],
     Literal["__end__"]
@@ -226,14 +227,16 @@ def handle_task_loop(state: State) -> Command:
 
         # HANDLE ROUTING TO WORKER
         # Validate worker name
-        valid_workers = ["research_processor", "next_action_processor"]
+        valid_workers = ["research_processor", "next_action_processor", "learning_processor"]
         if goto_worker not in valid_workers:
             error_message = HumanMessage(
                 content=f"Invalid worker '{goto_worker}'. Defaulting based on task type '{task_classification}'.",
                 name="executor"
             )
             # Default routing based on classification
-            if task_classification in ['research', 'learning', 'abstract']:
+            if task_classification == 'learning':
+                goto_worker = "learning_processor"
+            elif task_classification in ['research', 'abstract']:
                 goto_worker = "research_processor"
             else:
                 goto_worker = "next_action_processor"
@@ -268,7 +271,9 @@ def handle_task_loop(state: State) -> Command:
         )
 
         # Default routing based on classification
-        if task_classification in ['research', 'learning', 'abstract']:
+        if task_classification == 'learning':
+            fallback_worker = "learning_processor"
+        elif task_classification in ['research', 'abstract']:
             fallback_worker = "research_processor"
         else:
             fallback_worker = "next_action_processor"

@@ -43,3 +43,6 @@ class State(MessagesState):
     execution_timeline: Optional[List[Dict[str, Any]]]  # Node execution history with timing
     llm_call_log: Optional[List[Dict[str, Any]]]  # All LLM calls made during execution
     executor_decisions: Optional[List[Dict[str, Any]]]  # Routing decisions with reasoning
+
+    # Context file tracking
+    task_context_files: Optional[Dict[str, str]]  # task_id -> context_file_path mapping

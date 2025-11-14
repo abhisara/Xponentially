@@ -11,6 +11,7 @@ from workers.todoist_fetcher import todoist_fetcher_node
 from workers.task_classifier import task_classifier_node
 from workers.research_processor import research_processor_node
 from workers.next_action_processor import next_action_processor_node
+from workers.learning_processor import learning_processor_node
 from workers.markdown_writer import markdown_writer_node
 
 
@@ -31,6 +32,7 @@ def build_graph():
     workflow.add_node("task_classifier", task_classifier_node)
     workflow.add_node("research_processor", research_processor_node)
     workflow.add_node("next_action_processor", next_action_processor_node)
+    workflow.add_node("learning_processor", learning_processor_node)
     workflow.add_node("markdown_writer", markdown_writer_node)
 
     # Set entry point
@@ -62,6 +64,7 @@ def run_workflow(user_query: str = "Process today's Todoist tasks"):
             "task_classifier",
             "research_processor",
             "next_action_processor",
+            "learning_processor",
             "markdown_writer"
         ]
     }
