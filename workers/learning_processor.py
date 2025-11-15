@@ -100,7 +100,7 @@ def learning_processor_node(state: State) -> Command[Literal["executor"]]:
 
         # Generate learning-specific processing prompt
         prompt = get_processor_prompt(
-            processor_type="learning",
+            task_type="learning",
             task=task,
             context=context_info if context_info else None,
             comments=comments,

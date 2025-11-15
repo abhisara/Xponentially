@@ -12,6 +12,7 @@ from workers.task_classifier import task_classifier_node
 from workers.research_processor import research_processor_node
 from workers.next_action_processor import next_action_processor_node
 from workers.learning_processor import learning_processor_node
+from workers.planning_processor import planning_processor_node
 from workers.markdown_writer import markdown_writer_node
 
 
@@ -33,6 +34,7 @@ def build_graph():
     workflow.add_node("research_processor", research_processor_node)
     workflow.add_node("next_action_processor", next_action_processor_node)
     workflow.add_node("learning_processor", learning_processor_node)
+    workflow.add_node("planning_processor", planning_processor_node)
     workflow.add_node("markdown_writer", markdown_writer_node)
 
     # Set entry point
@@ -44,31 +46,3 @@ def build_graph():
 
 # Create singleton graph instance
 graph = build_graph()
-
-
-def run_workflow(user_query: str = "Process today's Todoist tasks"):
-    """
-    Run the task processing workflow.
-
-    Args:
-        user_query: User's request
-
-    Returns:
-        Final state after workflow completion
-    """
-    initial_state = {
-        "user_query": user_query,
-        "messages": [],
-        "enabled_agents": [
-            "todoist_fetcher",
-            "task_classifier",
-            "research_processor",
-            "next_action_processor",
-            "learning_processor",
-            "markdown_writer"
-        ]
-    }
-
-    # Run graph
-    result = graph.invoke(initial_state)
-    return result

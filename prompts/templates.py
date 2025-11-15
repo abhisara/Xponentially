@@ -178,9 +178,10 @@ AVAILABLE WORKERS:
 {agent_guidelines}
 
 VALID WORKER NAMES:
-- research_processor (for research and abstract tasks)
-- learning_processor (for learning and educational tasks)
-- next_action_processor (for short and planning tasks)
+- research_processor (for research tasks)
+- learning_processor (for learning and abstract tasks)
+- planning_processor (for planning tasks - analyzes progress and identifies remaining steps)
+- next_action_processor (for short tasks)
 - task_complete (signals this task is fully processed, move to next task)
 
 TASKS REMAINING: {tasks_remaining} (including current)
@@ -202,9 +203,10 @@ ROUTING DECISION INSTRUCTIONS:
      * What still needs to be done
    - DO NOT send to a worker it's already visited unless absolutely necessary
    - Match task type to worker:
-     * research/abstract → research_processor
-     * learning → learning_processor
-     * short/planning → next_action_processor
+     * research → research_processor
+     * learning/abstract → learning_processor
+     * planning → planning_processor
+     * short → next_action_processor
 
 OUTPUT FORMAT:
 Return a JSON object:
@@ -476,6 +478,91 @@ Example bad outputs:
 - "Do research" (not actionable)
 
 Return ONLY the next step, nothing else.
+"""
+
+    return prompt
+
+
+def get_planning_processor_prompt(
+    goal: str,
+    steps_taken: list,
+    task_description: str = "",
+    project_name: str = "",
+    search_results: str = ""
+) -> str:
+    """
+    Creates prompt for planning processor with progress analysis and web search.
+
+    Args:
+        goal: The goal from task name
+        steps_taken: List of steps already completed (from comments)
+        task_description: Optional task description
+        project_name: Optional project name
+        search_results: Web search results for required steps
+
+    Returns:
+        Formatted prompt for planning analysis
+    """
+    # Format steps taken section
+    steps_taken_section = ""
+    if steps_taken:
+        steps_taken_section = "\n## Steps Taken So Far (from comments):\n"
+        for i, step in enumerate(steps_taken, 1):
+            steps_taken_section += f"{i}. {step}\n"
+    else:
+        steps_taken_section = "\n## Steps Taken So Far:\nNo steps documented yet in comments.\n"
+
+    # Format project info
+    project_info = f"Project: {project_name}\n" if project_name else ""
+
+    prompt = f"""You are a planning progress analyzer. Your task is to analyze progress toward a goal and identify what remains to be done.
+
+GOAL (from task name):
+{goal}
+
+{project_info}
+Task Description: {task_description if task_description else "None"}
+
+{steps_taken_section}
+
+## Web Search Results (for identifying required steps):
+{search_results if search_results else "No web search results available."}
+
+INSTRUCTIONS:
+1. **Analyze the goal**: Understand what needs to be accomplished
+2. **Review steps taken**: Summarize what has been completed so far based on the comments
+3. **Identify required steps**: Based on the web search results and your knowledge, determine what steps are typically needed to achieve this goal
+4. **Compare progress**: Compare what's been done with what's required
+5. **Create summary**: Generate a clear summary showing:
+   - What has been accomplished
+   - What steps remain
+   - Progress percentage or status
+   - Next critical steps to take
+
+OUTPUT FORMAT:
+Provide your analysis in the following structure:
+
+## Progress Summary
+
+### Goal
+[Restate the goal clearly]
+
+### Steps Completed
+[List and summarize what has been done so far]
+
+### Required Steps (from research)
+[Based on web search and best practices, list the typical steps needed]
+
+### Progress Analysis
+[Compare completed vs required steps, estimate progress percentage]
+
+### Remaining Steps
+[What still needs to be done, prioritized]
+
+### Next Critical Actions
+[The 2-3 most important next steps to take]
+
+Be specific, actionable, and honest about progress. If little has been done, say so. If significant progress has been made, acknowledge it.
 """
 
     return prompt

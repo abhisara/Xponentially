@@ -83,6 +83,7 @@ if st.session_state.processing and st.session_state.workflow_result is None:
                     "research_processor",
                     "next_action_processor",
                     "learning_processor",
+                    "planning_processor",
                     "markdown_writer"
                 ],
                 "execution_timeline": [],
@@ -102,7 +103,7 @@ if st.session_state.processing and st.session_state.workflow_result is None:
 
             # Run workflow with streaming
             step_count = 0
-            max_steps = 15  # Estimate
+            max_steps = 35  # Estimate
 
             for event in graph.stream(initial_state, stream_mode="updates"):
                 step_count += 1

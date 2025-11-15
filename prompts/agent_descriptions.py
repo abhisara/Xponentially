@@ -45,11 +45,11 @@ def get_agent_descriptions() -> Dict[str, Dict[str, Any]]:
             "output_format": "Single sentence describing the next action to take",
         },
         "planning_processor": {
-            "name": "Planning Methodology Processor",
-            "capability": "Applies structured planning methodology to planning tasks",
-            "use_when": "For tasks classified as 'planning' type",
-            "limitations": "Requires user's planning methodology to be defined",
-            "output_format": "Structured plan following user's methodology (placeholder for now)",
+            "name": "Planning Progress Analyzer",
+            "capability": "Analyzes progress toward a goal by comparing completed steps (from comments) with required steps (from web search). Creates summary of what's done and what remains.",
+            "use_when": "For tasks classified as 'planning' type where task name is the goal and comments contain steps taken so far",
+            "limitations": "Requires task comments to track progress. Web search may not always find relevant information.",
+            "output_format": "Progress summary with completed steps, required steps, progress analysis, remaining steps, and next critical actions",
         },
         "learning_processor": {
             "name": "Learning Curriculum Builder",

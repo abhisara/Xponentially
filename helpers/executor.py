@@ -19,6 +19,15 @@ from prompts.templates import get_executor_prompt, get_task_loop_executor_prompt
 # Maximum replan attempts per step
 MAX_REPLANS = 2
 
+# Maximum processing attempts per task in task-loop mode
+MAX_PROCESSING_ATTEMPTS_PER_TASK = 5
+
+# Maximum number of times a task can visit the same processor
+MAX_VISITS_PER_PROCESSOR = 2
+
+# Maximum steps in the plan (safety limit to prevent runaway execution)
+MAX_PLAN_STEPS = 20
+
 
 def executor_node(state: State) -> Command[Union[
     Literal["todoist_fetcher"],
@@ -26,6 +35,7 @@ def executor_node(state: State) -> Command[Union[
     Literal["research_processor"],
     Literal["next_action_processor"],
     Literal["learning_processor"],
+    Literal["planning_processor"],
     Literal["markdown_writer"],
     Literal["planner"],
     Literal["__end__"]
@@ -45,6 +55,17 @@ def executor_node(state: State) -> Command[Union[
     """
     plan = state.get("plan", {})
     current_step = state.get("current_step", 1)
+
+    # SAFEGUARD: Check if we've exceeded maximum steps
+    if current_step > MAX_PLAN_STEPS:
+        completion_message = HumanMessage(
+            content=f"Maximum plan steps ({MAX_PLAN_STEPS}) exceeded. Forcing workflow completion to prevent infinite loop.",
+            name="executor"
+        )
+        return Command(
+            update={"messages": [completion_message]},
+            goto="__end__"
+        )
 
     # Check if we've completed all steps
     if str(current_step) not in plan:
@@ -88,7 +109,9 @@ def handle_task_loop(state: State) -> Command:
     messages = state.get("messages", [])
     enabled_agents = state.get("enabled_agents") or [
         "research_processor",
-        "next_action_processor"
+        "next_action_processor",
+        "learning_processor",
+        "planning_processor"
     ]
 
     # Check if all tasks are processed
@@ -110,18 +133,53 @@ def handle_task_loop(state: State) -> Command:
     task_id = current_task['id']
     task_classification = task_classifications.get(task_id, "short")
 
+    # SAFEGUARD: Check if task is already marked as complete
+    if task_completion_status.get(task_id, False):
+        completion_message = HumanMessage(
+            content=f"Task '{current_task['content']}' was already completed. Moving to next task...",
+            name="executor"
+        )
+        return Command(
+            update={
+                "messages": [completion_message],
+                "current_task_index": current_task_index + 1,
+                "current_task_id": None,
+            },
+            goto="executor"
+        )
+
     # Initialize history for this task if needed
     if task_id not in task_processing_history:
         task_processing_history[task_id] = []
 
     processing_history = task_processing_history[task_id]
 
+    # SAFEGUARD: Check if task has exceeded maximum processing attempts
+    if len(processing_history) >= MAX_PROCESSING_ATTEMPTS_PER_TASK:
+        force_completion_message = HumanMessage(
+            content=f"Task '{current_task['content']}' has been processed {len(processing_history)} times "
+                    f"(max: {MAX_PROCESSING_ATTEMPTS_PER_TASK}). Forcing completion to prevent infinite loop.",
+            name="executor"
+        )
+        task_completion_status[task_id] = True
+        
+        return Command(
+            update={
+                "messages": [force_completion_message],
+                "current_task_index": current_task_index + 1,
+                "current_task_id": None,
+                "task_completion_status": task_completion_status,
+                "task_processing_history": task_processing_history,
+            },
+            goto="executor"
+        )
+
     # Get last worker output for this task
     last_worker_output = ""
     if messages:
         # Look for most recent message from a processor
         for msg in reversed(messages):
-            if hasattr(msg, 'name') and msg.name in ['research_processor', 'next_action_processor']:
+            if hasattr(msg, 'name') and msg.name in ['research_processor', 'next_action_processor', 'learning_processor', 'planning_processor']:
                 last_worker_output = msg.content[:500]  # First 500 chars
                 break
 
@@ -227,23 +285,48 @@ def handle_task_loop(state: State) -> Command:
 
         # HANDLE ROUTING TO WORKER
         # Validate worker name
-        valid_workers = ["research_processor", "next_action_processor", "learning_processor"]
+        valid_workers = ["research_processor", "next_action_processor", "learning_processor", "planning_processor"]
         if goto_worker not in valid_workers:
             error_message = HumanMessage(
                 content=f"Invalid worker '{goto_worker}'. Defaulting based on task type '{task_classification}'.",
                 name="executor"
             )
             # Default routing based on classification
-            if task_classification == 'learning':
+            if task_classification == 'planning':
+                goto_worker = "planning_processor"
+            elif task_classification in ['learning', 'abstract']:
                 goto_worker = "learning_processor"
-            elif task_classification in ['research', 'abstract']:
+            elif task_classification == 'research':
                 goto_worker = "research_processor"
             else:
                 goto_worker = "next_action_processor"
 
+        # SAFEGUARD: Check if this processor has been visited too many times
+        visit_count = processing_history.count(goto_worker)
+        if visit_count >= MAX_VISITS_PER_PROCESSOR:
+            # Force completion if we've visited this processor too many times
+            force_completion_message = HumanMessage(
+                content=f"Task '{current_task['content']}' has been routed to {goto_worker} {visit_count} times "
+                        f"(max: {MAX_VISITS_PER_PROCESSOR}). Forcing completion to prevent infinite loop.",
+                name="executor"
+            )
+            task_completion_status[task_id] = True
+            
+            return Command(
+                update={
+                    "messages": [force_completion_message],
+                    "current_task_index": current_task_index + 1,
+                    "current_task_id": None,
+                    "task_completion_status": task_completion_status,
+                    "task_processing_history": task_processing_history,
+                    "executor_decisions": executor_decisions,
+                    "execution_timeline": execution_timeline,
+                },
+                goto="executor"
+            )
+
         # Add worker to processing history
-        if goto_worker not in processing_history:
-            processing_history.append(goto_worker)
+        processing_history.append(goto_worker)
 
         routing_message = HumanMessage(
             content=f"→ Routing task '{current_task['content']}' (type: {task_classification}) to {goto_worker}. "
@@ -264,24 +347,55 @@ def handle_task_loop(state: State) -> Command:
         )
 
     except Exception as e:
-        # Fallback routing
+        # Fallback routing with safeguards
         error_message = HumanMessage(
             content=f"Executor error: {str(e)}. Using fallback routing for task {current_task_index + 1}.",
             name="executor"
         )
 
+        # Initialize history if needed
+        if task_id not in task_processing_history:
+            task_processing_history[task_id] = []
+        processing_history = task_processing_history[task_id]
+
+        # SAFEGUARD: If we've already processed this task too many times, force completion
+        if len(processing_history) >= MAX_PROCESSING_ATTEMPTS_PER_TASK:
+            force_completion_message = HumanMessage(
+                content=f"Task '{current_task['content']}' encountered an error after {len(processing_history)} attempts. "
+                        f"Forcing completion to prevent infinite loop.",
+                name="executor"
+            )
+            task_completion_status[task_id] = True
+            
+            return Command(
+                update={
+                    "messages": [error_message, force_completion_message],
+                    "current_task_index": current_task_index + 1,
+                    "current_task_id": None,
+                    "task_completion_status": task_completion_status,
+                    "task_processing_history": task_processing_history,
+                },
+                goto="executor"
+            )
+
         # Default routing based on classification
-        if task_classification == 'learning':
+        if task_classification == 'planning':
+            fallback_worker = "planning_processor"
+        elif task_classification in ['learning', 'abstract']:
             fallback_worker = "learning_processor"
-        elif task_classification in ['research', 'abstract']:
+        elif task_classification == 'research':
             fallback_worker = "research_processor"
         else:
             fallback_worker = "next_action_processor"
+
+        # Track this fallback attempt
+        processing_history.append(fallback_worker)
 
         return Command(
             update={
                 "messages": [error_message],
                 "current_task_id": task_id,
+                "task_processing_history": task_processing_history,
             },
             goto=fallback_worker
         )
@@ -450,16 +564,30 @@ def handle_linear_plan(state: State, planned_agent: str) -> Command:
         )
 
     except Exception as e:
-        # Fallback: proceed with planned agent
+        # Fallback: proceed with planned agent or end if max steps exceeded
         error_message = HumanMessage(
             content=f"Executor error: {str(e)}. Falling back to planned agent: {planned_agent}",
             name="executor"
         )
 
+        # SAFEGUARD: If we've exceeded max steps, force end
+        next_step = current_step + 1
+        if next_step > MAX_PLAN_STEPS:
+            force_end_message = HumanMessage(
+                content=f"Maximum plan steps exceeded after error. Forcing workflow completion.",
+                name="executor"
+            )
+            return Command(
+                update={
+                    "messages": [error_message, force_end_message],
+                },
+                goto="__end__"
+            )
+
         return Command(
             update={
                 "messages": [error_message],
-                "current_step": current_step + 1,
+                "current_step": next_step,
             },
             goto=planned_agent if planned_agent != "END" else "__end__"
         )
