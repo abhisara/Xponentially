@@ -102,10 +102,13 @@ if st.session_state.processing and st.session_state.workflow_result is None:
                 status_text = st.empty()
 
             # Run workflow with streaming
+            # Set recursion_limit in config for invocation (increased from default 25 to handle task loops)
+            config = {"recursion_limit": 500}
+            
             step_count = 0
             max_steps = 35  # Estimate
 
-            for event in graph.stream(initial_state, stream_mode="updates"):
+            for event in graph.stream(initial_state, config=config, stream_mode="updates"):
                 step_count += 1
                 progress = min(step_count / max_steps, 0.95)  # Cap at 95% until complete
                 progress_bar.progress(progress)
@@ -126,8 +129,8 @@ if st.session_state.processing and st.session_state.workflow_result is None:
             progress_bar.progress(1.0)
             status_text.text("✅ Workflow complete!")
 
-            # Get final state
-            final_state = graph.invoke(initial_state)
+            # Get final state (use same config for consistency)
+            final_state = graph.invoke(initial_state, config=config)
 
             # Get tracked LLM calls
             llm_calls = [call.to_dict() for call in LLMCallTracker.get_calls()]

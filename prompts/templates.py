@@ -110,10 +110,13 @@ RECENT MESSAGES:
 {context}
 
 DECISION INSTRUCTIONS:
-1. Analyze the last message to determine if the current step succeeded
-2. Decide whether to proceed with the planned agent or if replanning is needed
-3. If the step is complete, move to the next step in the plan
-4. If all steps are complete, route to END
+1. FIRST, check if the planned agent has already run by looking for a message from that agent
+2. If the planned agent has NOT run yet, you MUST route to the planned agent (do not skip steps)
+3. If the planned agent HAS run and succeeded, move to the next step in the plan
+4. If the planned agent failed or you're blocked, consider replanning
+5. If all steps are complete, route to END
+
+CRITICAL: Never skip a step. If the planned agent hasn't executed yet, route to it.
 
 OUTPUT FORMAT:
 Return a JSON object with exactly 4 fields:

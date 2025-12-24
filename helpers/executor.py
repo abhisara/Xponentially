@@ -28,6 +28,17 @@ MAX_VISITS_PER_PROCESSOR = 2
 # Maximum steps in the plan (safety limit to prevent runaway execution)
 MAX_PLAN_STEPS = 20
 
+# Maximum executor invocations (safety limit to prevent infinite loops)
+MAX_EXECUTOR_INVOCATIONS = 100
+
+
+def _add_executor_counter(update_dict: dict, counter: int) -> dict:
+    """Helper to ensure executor_invocations counter is always included in updates."""
+    if update_dict is None:
+        update_dict = {}
+    update_dict["executor_invocations"] = counter
+    return update_dict
+
 
 def executor_node(state: State) -> Command[Union[
     Literal["todoist_fetcher"],
@@ -53,6 +64,20 @@ def executor_node(state: State) -> Command[Union[
     Returns:
         Command routing to appropriate worker or END
     """
+    # Track executor invocations to detect infinite loops
+    executor_invocations = state.get("executor_invocations", 0) + 1
+    
+    if executor_invocations > MAX_EXECUTOR_INVOCATIONS:
+        completion_message = HumanMessage(
+            content=f"Executor invoked {executor_invocations} times (max: {MAX_EXECUTOR_INVOCATIONS}). "
+                    f"Forcing workflow completion to prevent infinite loop.",
+            name="executor"
+        )
+        return Command(
+            update=_add_executor_counter({"messages": [completion_message]}, executor_invocations),
+            goto="__end__"
+        )
+    
     plan = state.get("plan", {})
     current_step = state.get("current_step", 1)
 
@@ -63,7 +88,7 @@ def executor_node(state: State) -> Command[Union[
             name="executor"
         )
         return Command(
-            update={"messages": [completion_message]},
+            update=_add_executor_counter({"messages": [completion_message]}, executor_invocations),
             goto="__end__"
         )
 
@@ -75,7 +100,7 @@ def executor_node(state: State) -> Command[Union[
             name="executor"
         )
         return Command(
-            update={"messages": [completion_message]},
+            update=_add_executor_counter({"messages": [completion_message]}, executor_invocations),
             goto="__end__"
         )
 
@@ -85,12 +110,12 @@ def executor_node(state: State) -> Command[Union[
 
     # CHECK IF WE'RE IN TASK-LOOP MODE
     if planned_agent == "task_loop":
-        return handle_task_loop(state)
+        return handle_task_loop(state, executor_invocations)
     else:
-        return handle_linear_plan(state, planned_agent)
+        return handle_linear_plan(state, planned_agent, executor_invocations)
 
 
-def handle_task_loop(state: State) -> Command:
+def handle_task_loop(state: State, executor_invocations: int) -> Command:
     """
     Handle intelligent per-task routing in task-loop mode.
 
@@ -121,10 +146,10 @@ def handle_task_loop(state: State) -> Command:
             name="executor"
         )
         return Command(
-            update={
+            update=_add_executor_counter({
                 "messages": [completion_message],
                 "current_step": state.get("current_step", 3) + 1  # Move to next step (markdown_writer)
-            },
+            }, executor_invocations),
             goto="executor"
         )
 
@@ -140,11 +165,11 @@ def handle_task_loop(state: State) -> Command:
             name="executor"
         )
         return Command(
-            update={
+            update=_add_executor_counter({
                 "messages": [completion_message],
                 "current_task_index": current_task_index + 1,
                 "current_task_id": None,
-            },
+            }, executor_invocations),
             goto="executor"
         )
 
@@ -164,13 +189,13 @@ def handle_task_loop(state: State) -> Command:
         task_completion_status[task_id] = True
         
         return Command(
-            update={
+            update=_add_executor_counter({
                 "messages": [force_completion_message],
                 "current_task_index": current_task_index + 1,
                 "current_task_id": None,
                 "task_completion_status": task_completion_status,
                 "task_processing_history": task_processing_history,
-            },
+            }, executor_invocations),
             goto="executor"
         )
 
@@ -313,7 +338,7 @@ def handle_task_loop(state: State) -> Command:
             task_completion_status[task_id] = True
             
             return Command(
-                update={
+                update=_add_executor_counter({
                     "messages": [force_completion_message],
                     "current_task_index": current_task_index + 1,
                     "current_task_id": None,
@@ -321,7 +346,7 @@ def handle_task_loop(state: State) -> Command:
                     "task_processing_history": task_processing_history,
                     "executor_decisions": executor_decisions,
                     "execution_timeline": execution_timeline,
-                },
+                }, executor_invocations),
                 goto="executor"
             )
 
@@ -335,14 +360,14 @@ def handle_task_loop(state: State) -> Command:
         )
 
         return Command(
-            update={
+            update=_add_executor_counter({
                 "messages": [routing_message],
                 "current_task_id": task_id,
                 "task_processing_history": task_processing_history,
                 "agent_query": f"Process task: {current_task['content']}",
                 "executor_decisions": executor_decisions,
                 "execution_timeline": execution_timeline,
-            },
+            }, executor_invocations),
             goto=goto_worker
         )
 
@@ -368,13 +393,13 @@ def handle_task_loop(state: State) -> Command:
             task_completion_status[task_id] = True
             
             return Command(
-                update={
+                update=_add_executor_counter({
                     "messages": [error_message, force_completion_message],
                     "current_task_index": current_task_index + 1,
                     "current_task_id": None,
                     "task_completion_status": task_completion_status,
                     "task_processing_history": task_processing_history,
-                },
+                }, executor_invocations),
                 goto="executor"
             )
 
@@ -392,16 +417,16 @@ def handle_task_loop(state: State) -> Command:
         processing_history.append(fallback_worker)
 
         return Command(
-            update={
+            update=_add_executor_counter({
                 "messages": [error_message],
                 "current_task_id": task_id,
                 "task_processing_history": task_processing_history,
-            },
+            }, executor_invocations),
             goto=fallback_worker
         )
 
 
-def handle_linear_plan(state: State, planned_agent: str) -> Command:
+def handle_linear_plan(state: State, planned_agent: str, executor_invocations: int) -> Command:
     """
     Handle linear plan execution for setup steps (fetch, classify) and final step (markdown_writer).
 
@@ -419,6 +444,27 @@ def handle_linear_plan(state: State, planned_agent: str) -> Command:
         "next_action_processor",
         "markdown_writer"
     ]
+
+    # SAFEGUARD: Check if planned agent has already run
+    # If not, route to it directly without asking LLM (prevents skipping steps)
+    planned_agent_has_run = any(
+        hasattr(msg, 'name') and msg.name == planned_agent 
+        for msg in messages
+    )
+    
+    if not planned_agent_has_run and planned_agent != "planner":
+        # Planned agent hasn't run yet - route to it directly
+        routing_message = HumanMessage(
+            content=f"Step {current_step}: Routing to planned agent '{planned_agent}' (not yet executed).",
+            name="executor"
+        )
+        return Command(
+            update=_add_executor_counter({
+                "messages": [routing_message],
+                "agent_query": f"Execute step {current_step}: {plan.get(str(current_step), {}).get('action', '')}",
+            }, executor_invocations),
+            goto=planned_agent
+        )
 
     try:
         # Start tracking this executor execution
@@ -512,10 +558,10 @@ def handle_linear_plan(state: State, planned_agent: str) -> Command:
                 name="executor"
             )
             return Command(
-                update={
+                update=_add_executor_counter({
                     "messages": [error_message],
                     "current_step": current_step + 1,
-                },
+                }, executor_invocations),
                 goto="executor"
             )
 
@@ -532,12 +578,12 @@ def handle_linear_plan(state: State, planned_agent: str) -> Command:
             )
 
             return Command(
-                update={
+                update=_add_executor_counter({
                     "messages": [replan_message],
                     "replan_flag": True,
                     "last_reason": reason,
                     "replan_attempts": replan_attempts,
-                },
+                }, executor_invocations),
                 goto="planner"
             )
 
@@ -551,7 +597,7 @@ def handle_linear_plan(state: State, planned_agent: str) -> Command:
         next_step = current_step + 1 if goto_agent != "__end__" else current_step
 
         return Command(
-            update={
+            update=_add_executor_counter({
                 "messages": [decision_message],
                 "agent_query": agent_query,
                 "current_step": next_step,
@@ -559,7 +605,7 @@ def handle_linear_plan(state: State, planned_agent: str) -> Command:
                 "replan_flag": False,
                 "executor_decisions": executor_decisions,
                 "execution_timeline": execution_timeline,
-            },
+            }, executor_invocations),
             goto=goto_agent if goto_agent != "END" else "__end__"
         )
 
@@ -578,16 +624,16 @@ def handle_linear_plan(state: State, planned_agent: str) -> Command:
                 name="executor"
             )
             return Command(
-                update={
+                update=_add_executor_counter({
                     "messages": [error_message, force_end_message],
-                },
+                }, executor_invocations),
                 goto="__end__"
             )
 
         return Command(
-            update={
+            update=_add_executor_counter({
                 "messages": [error_message],
                 "current_step": next_step,
-            },
+            }, executor_invocations),
             goto=planned_agent if planned_agent != "END" else "__end__"
         )

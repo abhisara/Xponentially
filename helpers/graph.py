@@ -40,8 +40,10 @@ def build_graph():
     # Set entry point
     workflow.add_edge(START, "planner")
 
-    # Compile and return
-    return workflow.compile()
+    # Compile the workflow
+    # Explicitly disable checkpointing since we don't need it for single-run workflows
+    # Note: recursion_limit is set during invocation (in app.py), not during compilation
+    return workflow.compile(checkpointer=None)
 
 
 # Create singleton graph instance
